@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="paper" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fafbf5"/><stop offset="1" stop-color="#eef2e6"/></linearGradient>
+    <linearGradient id="card" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#e6eddd"/><stop offset="1" stop-color="#f5f6e9"/></linearGradient>
+    <linearGradient id="capsule" x1="0" x2="0.3" y1="0" y2="1"><stop stop-color="#a9c5a2"/><stop offset="1" stop-color="#7f9f7b"/></linearGradient>
+    <linearGradient id="capsule-light" x1="0" x2="0.3" y1="0" y2="1"><stop stop-color="#e3e8c9"/><stop offset="1" stop-color="#c0d0a6"/></linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#paper)"/>
+  <rect x="24" y="24" width="1152" height="582" rx="30" fill="none" stroke="#d9e2d1"/>
+  <g font-family="Microsoft YaHei, PingFang SC, sans-serif">
+    <rect x="72" y="67" width="50" height="50" rx="16" fill="#23664e"/>
+    <g transform="translate(97 92) rotate(-40)"><rect x="-16" y="-8" width="32" height="16" rx="8" fill="#edf2dc"/><path d="M0-8h8a8 8 0 0 1 0 16H0Z" fill="#a6c2a0"/><path d="M0-7v14" stroke="#23664e" stroke-width="1.7"/></g>
+    <text x="137" y="101" fill="#23533e" font-family="Arial, sans-serif" font-size="31" font-weight="600" letter-spacing="-.8">MedCollect</text>
+    <text x="72" y="167" fill="#64806c" font-size="19" letter-spacing="3">药品收藏图鉴</text>
+    <text x="68" y="257" fill="#203e32" font-size="66" font-weight="500" letter-spacing="2">扫码收藏，</text>
+    <text x="68" y="345" fill="#23664e" font-size="66" font-weight="500" letter-spacing="2">记录每一克。</text>
+    <text x="73" y="395" fill="#607366" font-size="21">让手边的药盒，成为有迹可循的收藏。</text>
+    <g transform="translate(72 438)">
+      <rect width="107" height="42" rx="21" fill="#e4ecdf"/><text x="53.5" y="28" text-anchor="middle" fill="#3c634d" font-size="17">扫码记录</text>
+      <rect x="120" width="107" height="42" rx="21" fill="#e4ecdf"/><text x="173.5" y="28" text-anchor="middle" fill="#3c634d" font-size="17">私人图鉴</text>
+      <rect x="240" width="107" height="42" rx="21" fill="#eee9da"/><text x="293.5" y="28" text-anchor="middle" fill="#716b4f" font-size="17">克数成就</text>
+    </g>
+    <g transform="translate(758 104)">
+      <rect x="10" y="13" width="341" height="390" rx="34" fill="#234c3910"/>
+      <rect width="341" height="390" rx="34" fill="url(#card)" stroke="#d4dec8"/>
+      <text x="28" y="42" fill="#637e60" font-size="12" letter-spacing="2" font-family="Arial, sans-serif">YOUR PERSONAL ARCHIVE</text>
+      <ellipse cx="170" cy="190" rx="145" ry="77" transform="rotate(-30 170 190)" fill="none" stroke="#bbcba9" stroke-width="1"/>
+      <ellipse cx="170" cy="190" rx="145" ry="77" transform="rotate(30 170 190)" fill="none" stroke="#cbd5bc" stroke-width="1"/>
+      <g transform="translate(170 190) rotate(-39)">
+        <rect x="-103" y="-44" width="206" height="88" rx="44" fill="url(#capsule)"/>
+        <path d="M0-44h-59a44 44 0 0 0 0 88H0Z" fill="url(#capsule-light)"/>
+        <path d="M0-41v82" stroke="#f7f8e5" stroke-width="2" opacity=".75"/>
+        <path d="M-55-29h100" stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity=".2"/>
+      </g>
+      <path d="M51 105v16m-8-8h16M278 254v13m-6.5-6.5h13" stroke="#75916b" stroke-width="1.5"/>
+      <circle cx="270" cy="103" r="4" fill="#9bb48a"/><circle cx="66" cy="269" r="3" fill="#9bb48a"/>
+      <path d="M28 315h285" stroke="#d1dcc5"/>
+      <text x="28" y="350" fill="#3f674d" font-size="17">每一种收藏，都有自己的刻度</text>
+      <text x="28" y="375" fill="#6c8063" font-size="11" font-family="Arial, sans-serif" letter-spacing="1.5">SCAN. COLLECT. GROW.</text>
+    </g>
+    <path d="M72 538h1056" stroke="#d9e2d0"/>
+    <text x="72" y="576" fill="#647562" font-size="16">收藏是记录，而非囤积。仅作收藏记录，不提供用药建议或药品验真。</text>
+    <text x="1128" y="576" text-anchor="end" fill="#3f674d" font-size="18" font-family="Arial, sans-serif">med.miolab.ink</text>
+  </g>
+</svg>

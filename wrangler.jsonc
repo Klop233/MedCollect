@@ -5,8 +5,12 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "assets": { "directory": "dist/client", "binding": "ASSETS", "html_handling": "none", "not_found_handling": "none", "run_worker_first": ["/*", "!/_next/static/*", "!/*/_next/static/*"] },
-  "d1_databases": [{ "binding": "DB", "database_name": "medcollect", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }],
+  // No production database_id: Wrangler creates or reuses this named DB on deploy.
+  // preview_database_id only preserves the existing local emulator's storage identity.
+  // Do not use --preview against a remote database with this local-only ID.
+  "d1_databases": [{ "binding": "DB", "database_name": "medcollect", "preview_database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }],
   "r2_buckets": [{ "binding": "COVERS", "bucket_name": "medcollect-private-covers" }],
-  "vars": { "ENVIRONMENT": "production", "MAIL_MODE": "disabled" },
+  // Mail is disabled unless configured. deploy:worker preserves dashboard runtime vars.
+  "vars": { "ENVIRONMENT": "production", "BETTER_AUTH_URL": "https://med.miolab.ink" },
   "observability": { "enabled": false }
 }

@@ -44,6 +44,7 @@ npm run dev
 - App：http://localhost:5173 （务必与 BETTER_AUTH_URL 一致，不要混用127.0.0.1）。
 - 开发收件箱：http://127.0.0.1:8026 ，手动刷新并点击验证/重置链接。测试邮件只留在进程内存，重启收件箱会清空。
 - 本地 D1 和 R2 保存于忽略的 .wrangler/state，不会自动上传到云端；它们不是旧 data/medcollect.db。
+- `preview_database_id` 中的全零值只用于保留旧版本地模拟数据库的身份，不是生产数据库 ID；远程发布按 `database_name` 创建／复用，勿将该值配合 `--preview` 用于远程数据库。
 - 本地开发使用 .dev.vars；旧 .env.local 仅供历史 SQLite 导出/Node 测试工具使用，不会自动成为 Workers 生产 Secrets。
 - 手机相机需要可信 HTTPS；电脑 localhost 可开发测试，但普通局域网 HTTP 不是可靠的手机相机环境。
 
@@ -59,13 +60,43 @@ npm run preview
 
 Wrangler 源配置是 wrangler.jsonc；构建产物是 dist/server 和 dist/client。不要上传 .next，不要上传 .dev.vars/.env.local，也不要将 dist/server 当作公开静态目录。兼容日期固定为已验证的2026-07-01，升级 workerd 后再有意调整。
 
-### 首次发布到自己的 Cloudflare 账号
+### 从 GitHub 导入 Cloudflare Workers
 
-1. 执行 npx wrangler login，由你本人登录。
-2. 执行 npx wrangler d1 create medcollect，将真实 database_id 写回 wrangler.jsonc；全0 ID 只是本地占位，不能拿它发布。
-3. 执行 npx wrangler r2 bucket create medcollect-private-covers。不要开启公开 R2 URL / 公网桶访问。
-4. 在 wrangler.jsonc 的 vars 设置真实 HTTPS BETTER_AUTH_URL，保持 ENVIRONMENT=production；域名、回调和 Origin 必须一致。
-5. 设置 HTTP 邮件服务（见下节）和必需 Secrets：
+在 Cloudflare 的 **Workers & Pages → medcollect → 设置 → 构建** 中使用：
+
+| 设置 | 值 |
+| --- | --- |
+| Git 仓库 | `Klop233/MedCollect` |
+| 生产分支 | `main` |
+| 根目录 | 仓库根目录 `/` |
+| 构建命令 | `npm run build` |
+| 部署命令 | `npm run deploy:worker` |
+
+`deploy:worker` 使用生成的 `dist/server/wrangler.json` 上传应用及静态资源，自动创建／复用名为 `medcollect` 的 D1 和私有 R2 桶，然后应用 `drizzle/` 中尚未执行的 SQL 迁移。Wrangler 4.151.3 支持无 ID 时按数据库名称查询，所以 CI 不依赖把账号专属 ID 写回 Git。部署身份需要相应的 Workers、D1 和 R2 权限。
+
+**不要再填全零 `database_id`**：非空的占位 ID 会使 Wrangler 跳过自动创建，随后报 `10181 database not found`，旧的 Hello World 版本会继续在线。无需为了这个错误重建已创建成功的 R2 桶。
+
+首次自动创建时，会先激活 Worker、再迁移数据库；迁移完成前存在短暂的无表窗口。迁移失败会让构建显示失败，但不代表刚上传的 Worker 自动回滚。需要严格无窗口或已有正式数据时，请预先创建数据库、填写真实 ID、备份并先执行迁移，再上传应用；不要依赖部署后迁移进行破坏性的 schema 变更。
+
+`deploy:worker` 带 `--keep-vars` 保留面板中未在配置声明的普通运行变量；Wrangler 配置内已声明的变量仍以配置为准，Secrets 不写进 Git。当前域名配置为 `https://med.miolab.ink`，请将自定义域名绑定到 **medcollect** 这个 Worker；自部署到其他域名时同步修改 `BETTER_AUTH_URL` 和 SEO 站点地址。
+
+### 生产账号与邮件设置（部署成功前准备）
+
+在 Worker 的 **设置 → 变量和机密** 中配置，而不是只填“构建变量”：
+
+- `BETTER_AUTH_SECRET`：至少32字符的随机机密；只能设为 Secret，不要提交到 Git 或发送到聊天。
+- `MAIL_MODE=http`、`MAIL_API_URL`、`MAIL_FROM`：正式 HTTP 发信服务的运行变量。
+- `MAIL_API_TOKEN`：发信凭据，设为 Secret（服务确实不需鉴权时可省略）。
+- `TRACE_API_*`：按需配置；不配置查药服务仍可手填收藏。
+
+没有邮件配置时发信会明确失败，**不会跳过邮箱验证**。不要把本机 `127.0.0.1:8026` 测试收件箱配置用于公网 Worker。
+
+### 通过本机 CLI 发布到自己的 Cloudflare 账号
+
+1. 执行 `npx wrangler login`，由你本人登录。
+2. 在 `wrangler.jsonc` 设置自己的真实 HTTPS `BETTER_AUTH_URL`，保持 `ENVIRONMENT=production`；域名、回调和 Origin 必须一致。D1 可省略 ID 自动创建；要复用其他名字的现有数据库，请明确填写名称及真实 ID。
+3. 不要开启 R2 的公开 URL／公网桶访问。
+4. 设置 HTTP 邮件服务（见下节）和必需 Secrets：
 
 ```powershell
 npx wrangler secret put BETTER_AUTH_SECRET
@@ -74,9 +105,8 @@ npx wrangler secret put MAIL_API_TOKEN
 npx wrangler secret put TRACE_API_TOKEN
 ```
 
-6. 执行 npm run db:remote 应用版本化迁移（会改变你指定的真实 D1，请先确认目标及备份）。
-7. 执行 npm run deploy 构建并发布。只有 Cloudflare 返回部署成功后才能认为上线；当前交付没有替你创建云资源或公开发布。
-8. 发布后用真实邮箱和手机 HTTPS 验证：注册、验证、双设备登录、重置失效、重复扫码、封面权限，以及 iOS/Android/微信相机。
+5. 执行 `npm run deploy` 构建、发布并应用迁移。需要先迁移的正式环境，请先确认目标及备份，执行 `npm run db:remote`，再按你的发布流程上传。命令会改变真实云资源，本机构建／dry-run 不代表云端已发布。
+6. 发布后用真实邮箱和手机 HTTPS 验证：注册、验证、双设备登录、重置失效、重复扫码、封面权限，以及 iOS/Android/微信相机。
 
 生产密钥只在 Workers Secrets 设置。创建的数据库、R2和邮件服务受各自账户权限、额度及计费约束；没有承诺无限免费。
 
@@ -96,6 +126,15 @@ MAIL_FROM=MedCollect <noreply@你的已验证域名>
 请求为 POST JSON {from,to:[收件邮箱],subject,text}，Token 非空时带 Authorization: Bearer。接口必须2xx接受投递；10秒超时、不跟随重定向，不把服务商诊断或令牌写入日志。HTTP测试端点仅在 ENVIRONMENT=development 且地址为回环时允许；生产必须 HTTPS。MAIL_MODE=disabled 或缺配置会明确拒绝发信，不假报已发送，不绕过邮箱验证。
 
 新账号user/account同一个 D1 batch 创建，投递失败只补偿本请求创建且仍未验证的账号。密码重置使用条件 SQL 将密码更新、所有会话撤销、一次性token消费放同批提交；任何SQL失败整体回滚。普通改密保留当前会话、原子撤销其余设备。客户端不能决定收藏所有者，所有读写都按真实会话隔离，写请求校验本站Origin，私人响应no-store。
+
+## 社交媒体分享与 SEO
+
+- 公开站点地址集中于 `src/lib/site.ts`，当前为 `https://med.miolab.ink`。换域名时同步修改该地址和 `wrangler.jsonc` 的 `BETTER_AUTH_URL`。
+- 首页使用独立的 canonical 和 Open Graph URL；全站提供中文标题、简介、OG website / `zh_CN`、Twitter `summary_large_image` 和绝对图片地址，适用于读取这些标签的平台。
+- 分享封面为公开静态 `public/social-card.png`（1200×630），只展示品牌介绍，不包含药名记录、追溯码、邮箱或私人封面。另有 PNG favicon、Apple touch icon。
+- `robots.txt` 提供站点地图并禁止 API 抓取；`sitemap.xml` 只列公开首页。账号、认证、扫码、图鉴详情、统计和成就页通过页面级 `noindex, nofollow` 避免收录，且不继承首页 canonical。爬虫仍可读取这些页面的 noindex；robots 指示不能替代服务端鉴权。
+- 修改 `scripts/assets/social-card.svg` 后，可在有中文字体的开发机执行 `node scripts/generate-social-assets.mjs` 更新 PNG。图片已提交，Workers 构建不需要运行 Sharp 或安装字体。
+- 分享效果以站点实际部署成功、爬虫能访问图片及平台缓存更新为前提；这不保证搜索排名，也不保证所有平台（例如需要额外 JS SDK 的自定义卡片场景）均采用 OG 标签。
 
 ## 通用药品查询接口（可选）
 
