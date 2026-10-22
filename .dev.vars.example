@@ -1,0 +1,21 @@
+# Copy to .dev.vars; keep secrets out of Git. Do not copy this file to production.
+ENVIRONMENT=development
+BETTER_AUTH_URL=http://localhost:5173
+BETTER_AUTH_SECRET=
+# disabled | http. HTTP format: {from,to:[email],subject,text}.
+MAIL_MODE=http
+MAIL_API_URL=http://127.0.0.1:8026/send
+MAIL_API_TOKEN=
+MAIL_FROM=MedCollect <noreply@medcollect.local>
+# 留空 = 不发起网络查询，扫码后手动补全。
+# 用仓库里的 services/trace-api 时填 http://127.0.0.1:8787/api/trace/medcollect（先 npm run trace:api）。
+# 远程服务必须是 https，并把它的 MSFX_API_KEY 写进 TRACE_API_TOKEN。
+TRACE_API_URL=
+TRACE_API_METHOD=GET
+TRACE_API_BODY_TYPE=json
+TRACE_API_CODE_PARAM=code
+TRACE_API_PARAMS_JSON={}
+TRACE_API_TOKEN=
+TRACE_API_HEADERS_JSON={}
+TRACE_API_RESPONSE_PATH=
+TRACE_API_FIELD_MAP_JSON={}

@@ -1,0 +1,20 @@
+{
+  "_note": "离线自测用的合成样本，不是真实查询结果，不来自任何真实药品。字段名依照码上放心前端 bundle 的渲染逻辑列出，仅用于验证 API 形状。",
+  "retCode": "0",
+  "subRetCode": "0",
+  "drugName": "示例阿莫西林胶囊",
+  "physicName": "阿莫西林胶囊",
+  "approvalNo": "国药准字H00000000",
+  "pkgSpec": "0.25g×24粒/盒",
+  "prepnSpec": "0.25g",
+  "prepnTypeDesc": "胶囊剂",
+  "produceEntName": "示例制药有限公司",
+  "productionBatch": "B2408001",
+  "productionDate": "2026-08-01",
+  "expiryDate": "2028-07-31",
+  "codeStatus": "S",
+  "scancount": 1,
+  "materialList": [
+    { "materialCode": "00000000000000000001", "materialName": "空心胶囊" }
+  ]
+}
