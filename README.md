@@ -44,71 +44,94 @@ npm run dev
 - App：http://localhost:5173 （务必与 BETTER_AUTH_URL 一致，不要混用127.0.0.1）。
 - 开发收件箱：http://127.0.0.1:8026 ，手动刷新并点击验证/重置链接。测试邮件只留在进程内存，重启收件箱会清空。
 - 本地 D1 和 R2 保存于忽略的 .wrangler/state，不会自动上传到云端；它们不是旧 data/medcollect.db。
-- `preview_database_id` 中的全零值只用于保留旧版本地模拟数据库的身份，不是生产数据库 ID；远程发布按 `database_name` 创建／复用，勿将该值配合 `--preview` 用于远程数据库。
 - 本地开发使用 .dev.vars；旧 .env.local 仅供历史 SQLite 导出/Node 测试工具使用，不会自动成为 Workers 生产 Secrets。
 - 手机相机需要可信 HTTPS；电脑 localhost 可开发测试，但普通局域网 HTTP 不是可靠的手机相机环境。
 
 ## Workers 构建和部署
 
 ```powershell
+npm ci
+npm run setup:local
+npm run db:local
 npm run build
+npm run check:worker
 # 只打包验证，不创建/发布 Worker（可在无 Cloudflare 账号登录时执行）
 npx wrangler deploy --dry-run --config dist/server/wrangler.json --outdir .tools/worker-dry-run
-# 本地产物预览，先停掉 npm run dev，避免5173端口冲突
+# 本地产物预览，先停掉 npm run dev，避免5173端口冲突；显式加载根目录 .dev.vars
 npm run preview
 ```
 
-Wrangler 源配置是 wrangler.jsonc；构建产物是 dist/server 和 dist/client。不要上传 .next，不要上传 .dev.vars/.env.local，也不要将 dist/server 当作公开静态目录。兼容日期固定为已验证的2026-07-01，升级 workerd 后再有意调整。
+`npm run build` 会先检查 Node.js `>=22.13.0`，然后运行 Vite + vinext，生成 `dist/server` 和 `dist/client`。仓库提供 `.nvmrc`；Cloudflare Workers Builds 的 Node.js 版本必须设为 22.13.0 或更高，并使用 `npm ci`。不要上传 `.next`，不要上传 `.dev.vars`/`.env.local`，也不要将 `dist/server` 当作公开静态目录。
+
+`npm run check:worker` 会检查构建后的 Worker 入口、Assets、D1/R2 绑定、HTTPS `BETTER_AUTH_URL`，并拒绝全零或其他无效 D1 UUID。部署脚本会在 `wrangler deploy` 前自动执行这个检查，所以错误数据库配置会直接失败，不会静默发布。
+
+源配置是 `wrangler.jsonc`；构建产物使用生成的 `dist/server/wrangler.json`。D1 配置只声明 `database_name: medcollect`，没有提交账号专属 ID；Wrangler 会按名称连接已存在的 D1，首次部署可按账号权限自动配置/创建。若你的账号或组织策略要求固定现有数据库，请先执行 `npx wrangler d1 list`，把真实 UUID 写入本地/部署环境对应的 Wrangler 配置，绝不能使用全零占位 UUID。R2 桶 `medcollect-private-covers` 必须存在且保持私有。
 
 ### 从 GitHub 导入 Cloudflare Workers
 
-在 Cloudflare 的 **Workers & Pages → medcollect → 设置 → 构建** 中使用：
+本项目必须使用 **Workers**（不是 Pages 静态站点）。在 Cloudflare 的 Workers Builds 配置中使用：
 
 | 设置 | 值 |
 | --- | --- |
 | Git 仓库 | `Klop233/MedCollect` |
 | 生产分支 | `main` |
 | 根目录 | 仓库根目录 `/` |
+| 安装命令 | `npm ci`（如界面有该字段） |
 | 构建命令 | `npm run build` |
 | 部署命令 | `npm run deploy:worker` |
+| Node.js | `22.13.0` 或更高 |
 
-`deploy:worker` 使用生成的 `dist/server/wrangler.json` 上传应用及静态资源，自动创建／复用名为 `medcollect` 的 D1 和私有 R2 桶，然后应用 `drizzle/` 中尚未执行的 SQL 迁移。Wrangler 4.151.3 支持无 ID 时按数据库名称查询，所以 CI 不依赖把账号专属 ID 写回 Git。部署身份需要相应的 Workers、D1 和 R2 权限。
+`deploy:worker` 使用同一份生成配置部署 Worker/静态资源，然后对同一份配置执行 `wrangler d1 migrations apply DB --remote`。部署身份需要 Workers、D1 和 R2 权限；迁移失败不会回滚已经上传的 Worker，因此已有生产数据时建议先备份、预迁移，再发布应用。
 
-**不要再填全零 `database_id`**：非空的占位 ID 会使 Wrangler 跳过自动创建，随后报 `10181 database not found`，旧的 Hello World 版本会继续在线。无需为了这个错误重建已创建成功的 R2 桶。
+**不要再填全零 `database_id` 或 `preview_database_id`**：它们会被当作真实绑定，导致 Worker 指向不存在的 D1。删除占位值后，必须使用 `database_name` 或真实数据库 UUID；`--preview` 只应连接真实的预览数据库，不能使用全零值。
 
-首次自动创建时，会先激活 Worker、再迁移数据库；迁移完成前存在短暂的无表窗口。迁移失败会让构建显示失败，但不代表刚上传的 Worker 自动回滚。需要严格无窗口或已有正式数据时，请预先创建数据库、填写真实 ID、备份并先执行迁移，再上传应用；不要依赖部署后迁移进行破坏性的 schema 变更。
-
-`deploy:worker` 带 `--keep-vars` 保留面板中未在配置声明的普通运行变量；Wrangler 配置内已声明的变量仍以配置为准，Secrets 不写进 Git。当前域名配置为 `https://med.miolab.ink`，请将自定义域名绑定到 **medcollect** 这个 Worker；自部署到其他域名时同步修改 `BETTER_AUTH_URL` 和 SEO 站点地址。
-
-### 生产账号与邮件设置（部署成功前准备）
-
-在 Worker 的 **设置 → 变量和机密** 中配置，而不是只填“构建变量”：
-
-- `BETTER_AUTH_SECRET`：至少32字符的随机机密；只能设为 Secret，不要提交到 Git 或发送到聊天。
-- `MAIL_MODE=http`、`MAIL_API_URL`、`MAIL_FROM`：正式 HTTP 发信服务的运行变量。
-- `MAIL_API_TOKEN`：发信凭据，设为 Secret（服务确实不需鉴权时可省略）。
-- `TRACE_API_*`：按需配置；不配置查药服务仍可手填收藏。
-
-没有邮件配置时发信会明确失败，**不会跳过邮箱验证**。不要把本机 `127.0.0.1:8026` 测试收件箱配置用于公网 Worker。
+`deploy:worker` 带 `--keep-vars` 只保留配置中没有声明的面板变量；`wrangler.jsonc` 已声明的 `ENVIRONMENT` 和 `BETTER_AUTH_URL` 仍以代码配置为准。当前域名配置为 `https://med.miolab.ink`，请将自定义域名绑定到 `medcollect` 这个 Worker；自部署到其他域名时同步修改 `BETTER_AUTH_URL` 和 `src/lib/site.ts`。
 
 ### 通过本机 CLI 发布到自己的 Cloudflare 账号
 
-1. 执行 `npx wrangler login`，由你本人登录。
-2. 在 `wrangler.jsonc` 设置自己的真实 HTTPS `BETTER_AUTH_URL`，保持 `ENVIRONMENT=production`；域名、回调和 Origin 必须一致。D1 可省略 ID 自动创建；要复用其他名字的现有数据库，请明确填写名称及真实 ID。
-3. 不要开启 R2 的公开 URL／公网桶访问。
-4. 设置 HTTP 邮件服务（见下节）和必需 Secrets：
+1. 安装 Node.js 22.13+，在仓库根目录执行 `npm ci`。
+2. 登录 Cloudflare：
+
+```powershell
+npx wrangler login
+```
+
+3. 确认 `wrangler.jsonc` 中的 `name`、`BETTER_AUTH_URL`、D1 名称和 R2 桶名属于你的账号。若复用现有 D1，先执行 `npx wrangler d1 list` 并填入真实 `database_id`；若首次创建，确保 token 有 D1 创建权限。创建/确认私有 R2 桶：
+
+```powershell
+npx wrangler r2 bucket create medcollect-private-covers
+```
+
+桶已存在时不要重复创建，以 Wrangler 返回为准。
+
+4. 在 Worker 的运行时变量和 Secrets 中配置邮件及认证。项目已默认填入 Resend endpoint 和当前站点发件人：
+
+```dotenv
+MAIL_MODE=http
+MAIL_API_URL=https://api.resend.com/emails
+MAIL_FROM=MedCollect <noreply@med.miolab.ink>
+```
+
+请先在 Resend 验证 `med.miolab.ink` 发件域名；如果你使用其他已验证地址，先同步修改 `wrangler.jsonc` 的 `MAIL_FROM`。然后只把 Token 写入 Cloudflare Secret：
 
 ```powershell
 npx wrangler secret put BETTER_AUTH_SECRET
 npx wrangler secret put MAIL_API_TOKEN
-# 查药接口有鉴权时再添加对应配置，仍使用通用 TRACE_API_* 变量
+# 查药接口有鉴权时再添加
 npx wrangler secret put TRACE_API_TOKEN
 ```
 
-5. 执行 `npm run deploy` 构建、发布并应用迁移。需要先迁移的正式环境，请先确认目标及备份，执行 `npm run db:remote`，再按你的发布流程上传。命令会改变真实云资源，本机构建／dry-run 不代表云端已发布。
-6. 发布后用真实邮箱和手机 HTTPS 验证：注册、验证、双设备登录、重置失效、重复扫码、封面权限，以及 iOS/Android/微信相机。
+不要把 `MAIL_API_TOKEN` 写入 `wrangler.jsonc`、Git 或聊天，也不要使用本机 `127.0.0.1:8026`。Resend endpoint、正式邮件和可选查药接口都必须使用 HTTPS。
 
-生产密钥只在 Workers Secrets 设置。创建的数据库、R2和邮件服务受各自账户权限、额度及计费约束；没有承诺无限免费。
+5. 首次发布或 schema 有变更时，先检查构建产物，再确认迁移目标；最终发布命令会改变真实 Worker/D1/R2：
+
+```powershell
+npm run build
+npm run check:worker
+npm run deploy
+```
+
+6. 发布后用真实邮箱和手机 HTTPS 验证注册/邮箱验证、登录、重置密码、重复扫码、D1 数据隔离、私有封面和相机。`npm run build`、`check:worker`、dry-run 和本地 `npm run preview` 只证明本地产物正确，不代表已经上线。
 
 ## HTTP 邮件配置
 

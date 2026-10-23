@@ -1,5 +1,6 @@
-/** Node-only HTTP adapter. Endpoint, credentials and mapping are server configuration. */
+/** Server-side HTTP adapter. Endpoint, credentials and mapping are server configuration. */
 import { calculateMass } from "./mass";
+import { concatBytes } from "./bytes";
 
 export type TraceStatus = "found" | "unconfigured" | "forbidden" | "not_found" | "unsupported" | "failed";
 export type TraceCandidate = {
@@ -177,7 +178,7 @@ async function readBoundedJson(response: Response, signal: AbortSignal): Promise
       if (total > MAX_RESPONSE_BYTES) throw new Error("Response too large");
       chunks.push(value);
     }
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return JSON.parse(new TextDecoder().decode(concatBytes(chunks)));
   } finally {
     signal.removeEventListener("abort", cancel);
     await reader.cancel().catch(() => undefined);

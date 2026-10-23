@@ -1,6 +1,6 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
 import Decimal from "decimal.js";
-import { AppError, normalizeTags, parseCollectionInput } from "./collections";
+import { AppError, normalizeTags, parseCollectionInput } from "./collection-input";
 import { getProgress, sumGrams } from "./mass";
 import type { CollectionBox, MedicineSummary } from "./contracts";
 

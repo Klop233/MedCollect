@@ -1,4 +1,4 @@
-import { AppError } from "./collections";
+import { AppError } from "./collection-input";
 import type { WorkerEnv } from "./worker-env";
 const MAX_BYTES = 5 * 1024 * 1024;
 function dimensions(width: number, height: number) { if (!width || !height || width > 4096 || height > 4096) throw new AppError("封面尺寸不能超过4096×4096，请先压缩图片"); }

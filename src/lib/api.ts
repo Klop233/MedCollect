@@ -1,6 +1,7 @@
 import { createWorkerAuth } from "./worker-auth";
 import { workerEnvironment } from "./worker-runtime";
-import { AppError } from "./collections";
+import { AppError } from "./collection-input";
+import { concatBytes } from "./bytes";
 import { createWorkerCollectionService } from "./worker-collections";
 
 type Service = ReturnType<typeof createWorkerCollectionService>;
@@ -32,7 +33,7 @@ export async function readJson(request: Request): Promise<unknown> {
     if (total > 32_768) { await reader.cancel(); throw new AppError("请求内容过大", 413); }
     chunks.push(value);
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+  try { return JSON.parse(new TextDecoder().decode(concatBytes(chunks))); }
   catch { throw new AppError("JSON 格式无效"); }
 }
 

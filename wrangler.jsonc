@@ -1,16 +1,47 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "medcollect",
-  "main": "vinext/server/fetch-handler",
-  "compatibility_date": "2026-07-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": { "directory": "dist/client", "binding": "ASSETS", "html_handling": "none", "not_found_handling": "none", "run_worker_first": ["/*", "!/_next/static/*", "!/*/_next/static/*"] },
-  // No production database_id: Wrangler creates or reuses this named DB on deploy.
-  // preview_database_id only preserves the existing local emulator's storage identity.
-  // Do not use --preview against a remote database with this local-only ID.
-  "d1_databases": [{ "binding": "DB", "database_name": "medcollect", "preview_database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "drizzle" }],
-  "r2_buckets": [{ "binding": "COVERS", "bucket_name": "medcollect-private-covers" }],
-  // Mail is disabled unless configured. deploy:worker preserves dashboard runtime vars.
-  "vars": { "ENVIRONMENT": "production", "BETTER_AUTH_URL": "https://med.miolab.ink" },
-  "observability": { "enabled": false }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "medcollect",
+	"main": "vinext/server/fetch-handler",
+	"compatibility_date": "2026-07-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "dist/client",
+		"binding": "ASSETS",
+		"html_handling": "none",
+		"not_found_handling": "none",
+		"run_worker_first": [
+			"/*",
+			"!/_next/static/*",
+			"!/*/_next/static/*"
+		]
+	},
+	// Wrangler resolves this named database during deploy and provisions it when needed.
+	// Set a real database_id here only when pinning an existing account-specific D1.
+	// Do not use a placeholder UUID: it becomes the Worker production binding.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "medcollect",
+			"migrations_dir": "drizzle"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "COVERS",
+			"bucket_name": "medcollect-private-covers"
+		}
+	],
+	// Mail uses the Resend HTTP API; the API token remains a Cloudflare Secret.
+	"vars": {
+		"ENVIRONMENT": "production",
+		"BETTER_AUTH_URL": "https://med.miolab.ink",
+		"MAIL_MODE": "http",
+		"MAIL_API_URL": "https://api.resend.com/emails",
+		"MAIL_FROM": "MedCollect <noreply@med.miolab.ink>"
+	},
+	"observability": {
+		"enabled": false
+	}
 }

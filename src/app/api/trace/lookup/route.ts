@@ -1,7 +1,7 @@
 import { workerEnvironment } from "@/lib/worker-runtime";
 import { stringSettings } from "@/lib/worker-env";
 import { endpoint, json, rateLimit, readJson, requireUser } from "@/lib/api";
-import { normalizeTrace, AppError } from "@/lib/collections";
+import { normalizeTrace, AppError } from "@/lib/collection-input";
 import { lookupTrace } from "@/lib/trace";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
