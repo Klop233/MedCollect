@@ -6,6 +6,14 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"routes": [
+		{
+			"pattern": "med.miolab.ink",
+			"custom_domain": true,
+			"enabled": true,
+			"previews_enabled": false
+		}
+	],
 	"assets": {
 		"directory": "dist/client",
 		"binding": "ASSETS",
@@ -42,6 +50,8 @@
 		"MAIL_FROM": "MedCollect <noreply@med.miolab.ink>"
 	},
 	"observability": {
-		"enabled": false
+		"logs": {
+			"enabled": true
+		}
 	}
 }
