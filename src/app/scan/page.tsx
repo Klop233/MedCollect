@@ -6,6 +6,7 @@ import { Shell, PageHeading, ErrorNotice } from '@/components/shell';
 import { CollectionForm } from '@/components/collection-form';
 import { Modal } from '@/components/modal';
 import { request, type Lookup, type Box, type Medicine } from '@/components/ui-types';
+import { lookupLocally } from '@/lib/local-lookup';
 import type { IScannerControls } from '@zxing/browser';
 
 export default function ScanPage() {
@@ -43,7 +44,11 @@ export default function ScanPage() {
     if (/^https?:\/\//i.test(value) || !/^[A-Za-z0-9._+\-/=]{1,200}$/.test(value)) { setError('这是网址或暂不支持的码内容。为保证安全，不会自动打开或访问它；请手动输入包装上的纯追溯码。'); return; }
     if (format === 'EAN_13' || format === 'EAN_8' || format === 'UPC_A' || format === 'UPC_E' || (/^\d+$/.test(value) && [8, 12, 13, 14].includes(value.length))) { setError('识别到可能的商品条码。它不能唯一识别这一盒，请扫描旁边的药品追溯码。'); return; }
     setInput(value); setCode(value); setLookup(null); setBusy(true);
-    try { setLookup(await request<Lookup>('/api/trace/lookup', { method: 'POST', body: JSON.stringify({ code: value, format }) })); } catch (e) { setError(e instanceof Error ? e.message : '查询失败'); setLookup({ status: 'failed', message: '查询暂时失败，你仍可以手动补全信息。' }); } finally { setBusy(false); }
+    try {
+      // 请求先由浏览器发给本机服务（不经过云端、不需要密钥）；本机这条路走不通才回退到 Worker。
+      const local = await lookupLocally(value);
+      setLookup(local ?? await request<Lookup>('/api/trace/lookup', { method: 'POST', body: JSON.stringify({ code: value, format }) }));
+    } catch (e) { setError(e instanceof Error ? e.message : '查询失败'); setLookup({ status: 'failed', message: '查询暂时失败，你仍可以手动补全信息。' }); } finally { setBusy(false); }
   }
   async function startCamera() {
     if (starting.current) return;

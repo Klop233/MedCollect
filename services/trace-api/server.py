@@ -25,11 +25,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
-from msfx_client import (FloodControl, MsfxError, NeedsHuman, TraceCodeClient,
-                         medcollect_candidate, shape_result)
+from msfx_client import (DictAware, FloodControl, MsfxError, NeedsHuman,
+                         TraceCodeClient, medcollect_candidate, shape_result)
 
 CLIENT: Optional[Any] = None
 API_KEY = os.environ.get("MSFX_API_KEY", "")
+# 浏览器直连时用：空 = 允许任意来源；填了就只放行列出的站点（逗号分隔）
+ALLOWED_ORIGINS = [item.strip().rstrip("/") for item in
+                   os.environ.get("MSFX_ALLOWED_ORIGINS", "").split(",") if item.strip()]
 STARTED_AT = time.time()
 
 INDEX_HTML = """<!doctype html>
@@ -49,27 +52,35 @@ h1{font-size:22px}td{padding:4px 12px 4px 0;vertical-align:top}</style>
 """
 
 
-class MockClient:
+class MockClient(DictAware):
     """离线自测：把 --mock 文件当成 ④ 的 data 返回，不访问任何上游。
 
     只用于验证 API 形状和 MedCollect 对接，不是真实查询结果。
+    显式传了 --dict-file / --dict-prefix 时也走一遍药品字典，方便离线演练命中。
     """
 
-    def __init__(self, data: Dict[str, Any], path: str = ""):
+    def __init__(self, data: Dict[str, Any], path: str = "", dictionary=None):
         self.data = data
         self.path = path
+        self.dictionary = dictionary
         self.stats = {"queries": 0, "cache_hits": 0, "errors": 0,
                       "browser_fallbacks": 0, "mock": True}
 
     def query(self, raw_code: str, *, fresh: bool = False) -> Dict[str, Any]:
         code = TraceCodeClient.normalize_code(raw_code)
         TraceCodeClient.validate(code)
+        if not fresh:
+            known = self._dict_lookup(code)
+            if known is not None:
+                return known
         self.stats["queries"] += 1
         try:
-            return shape_result(code, "MOCK", self.data)
+            result = shape_result(code, "MOCK", self.data)
         except MsfxError:
             self.stats["errors"] += 1
             raise
+        self._remember(code, result)
+        return dict(result)
 
     def close(self) -> None:
         return None
@@ -90,7 +101,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self._cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        # Chrome 的 Private Network Access：公网页面访问 127.0.0.1 会先问一句
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key, Authorization")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Cache-Control", "no-store")
@@ -100,9 +116,23 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
+    def handle(self) -> None:
+        # 浏览器会关掉空闲的 keep-alive 连接，这不算错误，别把堆栈打到控制台
+        try:
+            super().handle()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+
     def _send_obj(self, status: int, obj: Any, extra: Dict[str, str] | None = None) -> None:
         pretty = "pretty" in parse_qs(urlparse(self.path).query)
         self._send(status, json_bytes(obj, pretty), extra=extra)
+
+    def _cors_origin(self) -> Optional[str]:
+        """默认允许任意来源；设了 MSFX_ALLOWED_ORIGINS 就只放行列出的站点。"""
+        if not ALLOWED_ORIGINS:
+            return "*"
+        origin = (self.headers.get("Origin") or "").strip()
+        return origin if origin in ALLOWED_ORIGINS else None
 
     def log_message(self, fmt: str, *args: Any) -> None:      # 默认日志带时间戳更好调试
         sys.stderr.write("%s  %s\n" % (time.strftime("%H:%M:%S"), fmt % args))
@@ -136,11 +166,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/health":
             verifier = getattr(CLIENT, "verifier", None)
+            dictionary = getattr(CLIENT, "dictionary", None)
             self._send_obj(200, {
                 "ok": True,
                 "uptime_s": round(time.time() - STARTED_AT, 1),
                 "mock": bool(getattr(CLIENT, "stats", {}).get("mock")),
                 "stats": CLIENT.stats if CLIENT else {},
+                "dict": dictionary.stats() if dictionary is not None else {"enabled": False},
                 "verify": verifier.state() if verifier is not None else {"active": False, "ok": None},
             })
             return
@@ -238,22 +270,51 @@ def main(argv: list[str] | None = None) -> int:
                     help="验证窗口最长存在多久（秒）")
     ap.add_argument("--mock", metavar="FILE",
                     help="离线自测：把文件内容当作 ④ 的 data 返回，不访问上游（不是真实查询）")
+    ap.add_argument("--no-dict", action="store_true",
+                    help="关掉本机药品字典：每个码都老老实实问上游")
+    ap.add_argument("--dict-file", metavar="FILE",
+                    help="药品字典文件（默认 services/trace-api/drug_dict.json）")
+    ap.add_argument("--dict-prefix", type=int, metavar="N",
+                    help="药品标识码取前几位（默认 7）")
     args = ap.parse_args(argv)
 
     if args.mock:
         with open(args.mock, encoding="utf-8") as f:
-            CLIENT = MockClient(json.load(f), args.mock)
+            mock_data = json.load(f)
+        mock_dict = None
+        if args.dict_file or args.dict_prefix:      # 显式给了才演练字典命中
+            from drug_dict import DrugDict
+            mock_dict = DrugDict(args.dict_file, args.dict_prefix)
+        CLIENT = MockClient(mock_data, args.mock, mock_dict)
         print(f"mock 模式：使用 {args.mock}，不会访问「码上放心」", flush=True)
     else:
+        dictionary = None
+        if not args.no_dict:
+            from drug_dict import DrugDict
+            dictionary = DrugDict(args.dict_file, args.dict_prefix)
         CLIENT = TraceCodeClient(min_interval=args.min_interval, cache_ttl=args.cache_ttl,
                                  backend=args.backend, headed=args.headed,
                                  auto_verify=args.auto_verify, verify_wait=args.verify_wait,
-                                 verify_timeout=args.verify_timeout)
+                                 verify_timeout=args.verify_timeout,
+                                 dictionary=dictionary)
+
+    loopback = args.host in ("127.0.0.1", "localhost", "::1", "[::1]")
+    if not loopback and not API_KEY:
+        print(f"警告：{args.host} 不是回环地址且没有设置 MSFX_API_KEY，同网段的机器都能直接查。"
+              "只给本机 App 用就保持默认的 127.0.0.1。", file=sys.stderr, flush=True)
 
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print(f"trace-api 已启动： http://{args.host}:{args.port}/", flush=True)
+    print(f"  只接受本机请求 = {'是' if loopback else '否（已对外监听）'}", flush=True)
     print(f"  backend = {'mock' if args.mock else args.backend}", flush=True)
+    print(f"  鉴权 = {'开（需 X-API-Key 或 Bearer）' if API_KEY else '关闭（本机使用，不需要任何密钥）'}",
+          flush=True)
+    dictionary = getattr(CLIENT, "dictionary", None)
+    if dictionary is not None:
+        info = dictionary.stats()
+        print(f"  药品字典 = {info['entries']} 条（前 {info['prefix_len']} 位标识码）"
+              f" {info['file']}", flush=True)
     if not args.mock:
         print(f"  自动弹窗验证 = {'开' if args.auto_verify else '关'}"
               f"（本次请求最多等 {args.verify_wait:g}s）", flush=True)
@@ -265,6 +326,9 @@ def main(argv: list[str] | None = None) -> int:
         print("\n已停止。", flush=True)
     finally:
         CLIENT.close()
+        dictionary = getattr(CLIENT, "dictionary", None)
+        if dictionary is not None:
+            dictionary.close()
         httpd.server_close()
     return 0
 

@@ -32,12 +32,15 @@ import hashlib
 import json
 import os
 import re
+import sys
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
+
+from drug_dict import DrugDict, product_from_summary, summary_from_product
 
 APP_KEY = "12574478"
 JSV = "2.7.0"
@@ -239,7 +242,56 @@ class MtopSession:
 
 
 # --------------------------------------------------------------------------- 客户端
-class TraceCodeClient:
+class DictAware:
+    """查询前先问本机药品字典，查到了就直接回答，查完再记回去（见 drug_dict.py）。
+
+    子类只要准备 self.dictionary（DrugDict 或 None）和 self.stats 就能用。
+    """
+
+    dictionary = None
+
+    def _dict_lookup(self, code: str) -> Optional[Dict[str, Any]]:
+        """同款药以前查过：直接给产品级信息，不打上游。没有就返回 None。"""
+        if self.dictionary is None:
+            return None
+        hit = self.dictionary.lookup(code)
+        if not hit:
+            return None
+        summary = summary_from_product(hit["product"])
+        if not summary.get("drug_name"):
+            return None
+        self.stats["dict_hits"] = self.stats.get("dict_hits", 0) + 1
+        return {
+            "ok": True,
+            "code": code,
+            "queried_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "token": None,
+            "summary": summary,
+            "data": {},
+            "cached": True,
+            "cache_age": 0,
+            "source": "drug_dict",
+            "dict": {
+                "prefix": hit["prefix"],
+                "prefix_len": hit["prefix_len"],
+                "samples": hit["samples"],
+                "last_seen": hit["last_seen"],
+            },
+            # 字典只回答「这是什么药」，批次信息必须按药盒核对
+            "batch_fields_known": False,
+            "note": "来自本机药品字典（产品级信息）；批号和有效期请按药盒补全。",
+        }
+
+    def _remember(self, code: str, result: Dict[str, Any]) -> None:
+        if self.dictionary is None or result.get("source"):
+            return
+        try:
+            self.dictionary.remember(code, product_from_summary(result.get("summary") or {}))
+        except Exception as exc:                                  # 记不上不能影响查询
+            sys.stderr.write(f"[trace-api] 药品字典写入失败：{exc!r}\n")
+
+
+class TraceCodeClient(DictAware):
     """把一个 20 位追溯码变成结构化药品信息。
 
     backend:
@@ -256,7 +308,8 @@ class TraceCodeClient:
                  timeout: float = 20.0, backend: str = "auto",
                  browser_profile: Optional[str] = None, headed: bool = False,
                  auto_verify: bool = False, verify_wait: float = 0.0,
-                 verify_timeout: float = 180.0, verifier=None):
+                 verify_timeout: float = 180.0, verifier=None,
+                 dictionary=None, use_dict: bool = True):
         self.min_interval = min_interval
         self.cache_ttl = cache_ttl
         self.timeout = timeout
@@ -269,11 +322,15 @@ class TraceCodeClient:
             from verify import SliderVerifier
             verifier = SliderVerifier(self.browser_profile, timeout=verify_timeout)
         self.verifier = verifier
+        # 本机药品字典：同款药的其他盒不用再问上游（见 drug_dict.py）
+        if dictionary is None and use_dict:
+            dictionary = DrugDict()
+        self.dictionary = dictionary
         self._lock = threading.Lock()
         self._cache: Dict[str, tuple] = {}
         self._browser = None
         self.stats = {"queries": 0, "cache_hits": 0, "errors": 0,
-                      "browser_fallbacks": 0, "verifications": 0}
+                      "browser_fallbacks": 0, "verifications": 0, "dict_hits": 0}
 
     # -- 工具
     @staticmethod
@@ -301,6 +358,9 @@ class TraceCodeClient:
                 out = dict(hit[1])
                 out.update(cached=True, cache_age=round(time.time() - hit[0], 1))
                 return out
+            known = self._dict_lookup(code)
+            if known is not None:
+                return known
 
         with self._lock:
             if not fresh:
@@ -317,6 +377,7 @@ class TraceCodeClient:
                 raise
             self.stats["queries"] += 1
             self._cache[code] = (time.time(), result)
+            self._remember(code, result)
             return dict(result)
 
     def _run(self, code: str) -> Dict[str, Any]:
@@ -550,4 +611,10 @@ def medcollect_candidate(result: Dict[str, Any]) -> Dict[str, Any]:
     expires = normalize_date(summary.get("expiry_date"))
     if expires:
         candidate["expiresAt"] = expires
+    # 命中本机药品字典时标明来源：只有产品级信息，批号/有效期仍需按药盒补全
+    source = result.get("source")
+    if isinstance(source, str) and source:
+        candidate["source"] = source
+    if result.get("batch_fields_known") is False:
+        candidate["batchKnown"] = False
     return candidate

@@ -19,3 +19,13 @@ __pycache__/
 *.pyc
 services/trace-api/cookies.json
 services/trace-api/.browser-profile/
+# 本机药品字典：从你自己的收藏里长出来的，不进仓库
+services/trace-api/drug_dict.json
+services/trace-api/drug_dict.json.*
+# Android 构建产物与本机配置
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk
+*.aab

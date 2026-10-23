@@ -168,17 +168,47 @@ MAIL_FROM=MedCollect <noreply@你的已验证域名>
 `services/trace-api` 是按上面的通用契约实现的现成后端（Python 3 标准库，查询「码上放心」追溯数据）：
 
 ```powershell
-npm run trace:solve   # 首次：过一次人工验证（滑块），把 x5sec 存下来
-npm run trace:api     # 之后：http://127.0.0.1:8787
+npm run trace:api     # 启动本机服务 http://127.0.0.1:8787（被滑块拦下时自动弹窗）
+npm run dev           # 另一个终端启动 App
 ```
 
-如需接入此本地服务，在自己的 `.dev.vars` 中配置 `TRACE_API_URL=http://127.0.0.1:8787/api/trace/medcollect`；服务返回默认字段名，不需要写 `TRACE_API_FIELD_MAP_JSON`。不配置查询服务也可手动录入收藏。协议细节、风控边界和公网部署见 `services/trace-api/README.md`。
+第一次查询被阿里拦下时，验证窗口会自动弹出，拖一下滑块即可；也可以手动 `npm run trace:solve`。
 
-- 只有本地开发能用 `http://127.0.0.1`；部署到 Cloudflare 时必须把服务放到 HTTPS 上，并把它的 `MSFX_API_KEY` 写进 `TRACE_API_TOKEN`。
+**默认就是浏览器直连本机**：扫码后浏览器先向 `http://127.0.0.1:8787/api/trace/medcollect` 发请求，
+请求从你自己的电脑发出，不经过 Cloudflare、不需要任何密钥；本机这条路不通（服务没开、浏览器不允许
+访问回环地址）才回退到 Worker 的 `/api/trace/lookup`。
+
+所以云端部署也不再需要把服务搬上公网：**开着 `npm run trace:api` 的电脑上打开站点，扫码就能自动查**。
+用手机或在没装本机服务的电脑上打开时，和以前一样走 Worker，查不到就手动补全。
+
+- **不需要 API Key**：服务只监听 `127.0.0.1`，浏览器直接调用，`TRACE_API_TOKEN` 留空即可。
+- 服务端 Worker 那条路仍然是可选的：在 `.dev.vars` 里配 `TRACE_API_URL` 即可启用（本机开发时两者等价）。
+- 协议细节、风控边界、CORS 和公网部署见 `services/trace-api/README.md`。
 - 服务没启动时扫码会提示查询失败，仍可手动补全，不影响收藏。
 - 阿里风控要求真人在浏览器里拖一次滑块，脚本过不了：被拦时**验证窗口会自动弹出**，拖完窗口自关，
   App 提示「拖完滑块后重新查询」；`x5sec` 过期后会再弹一次。不想自动弹窗用 `--no-auto-verify`。
 - 数据版权归阿里健康，仅供个人记录，不作为验真依据；查不到时不推断质量，由用户按药盒填写。
+
+### 本机药品字典：同款药只查一次
+
+20 位追溯码 = **药品标识码 + 序列号**：同一款药的每一盒只有序列号不同。所以第一次查到某款药之后，
+同款药的其他盒不必再问上游——本机服务会把「产品级」信息按标识码前几位记下来
+（`services/trace-api/drug_dict.json`），命中时直接回答，不联网、不消耗风控额度、也不会再弹滑块。
+
+```powershell
+npm run trace:dict                    # 看字典里有多少条、命中多少次
+npm run trace:dict -- --show 8123456  # 看某一条
+npm run trace:dict -- --import boxes.json   # 从导出文件灌种子（JSON / CSV 都行）
+```
+
+- **只记产品级信息**：药名、规格、生产企业、批准文号、剂型等。
+- **绝不记每盒的信息**：批号、生产日期、有效期、扫码次数、码状态——这些每盒都不同，
+  按产品缓存会张冠李戴。命中字典时界面会提示「批号和有效期请照药盒补全」。
+- **前缀默认 7 位**，可用 `--dict-prefix` / `MSFX_DICT_PREFIX` 改，`MSFX_DICT_FILE` 改文件位置。
+  平台没公开标识码的确切位数，所以带保险：同一个前缀后来出现了不同药品时，这条会被标成停用，
+  宁可少缓存，也不会把 A 药的资料安到 B 药头上。
+- 关掉它：`npm run trace:api -- --no-dict`（每个码都老老实实问上游）。
+- 运行状态在 `GET /health` 的 `dict` 字段里。
 
 ### 最简接入：GET + Bearer Token
 
@@ -265,6 +295,40 @@ TRACE_API_RESPONSE_PATH=data
 - 当前配置覆盖常规 GET、POST JSON/表单、Bearer 与自定义请求头。需要动态 HMAC 签名、OAuth 换票、多步查询、嵌套请求码字段或其他私有协议的 API，仍需另加小型适配器，不能通过执行配置中的脚本解决。
 
 旧平台专用的 `TRACE_APP_KEY` 等环境变量不再读取；从旧版本升级时删除旧查询配置，按当前 `.env.example` 添加 `TRACE_API_*`。**没有内置免费查药数据，也没有默认外部服务；改成通用配置不代表任何第三方接口都无需授权。**
+
+## Android APK（可选）
+
+手机上的查询由**手机自己**发给阿里，不经过你的电脑、不经过 Cloudflare：一台设备被风控，不影响别的设备，也不耽误桌面上的 `npm run trace:api`。
+
+```powershell
+npm run apk        # 需要 JDK 17~21 + Android SDK；产物在 android/app/build/outputs/apk/debug/
+adb install -r android\app\build\outputs\apk\debug\app-debug.apk
+```
+
+它是个 WebView 外壳：界面仍然是 `med.miolab.ink`，但追溯码查询交给原生代码：
+
+| 层 | 做什么 |
+|---|---|
+| `MainActivity` | 加载站点、管相机权限、把桥挂到 `window.MedCollectNative` |
+| `TraceBridge` | 页面 → `lookup(code, requestId)` → 后台线程 → 回调 `window.__medcollectTrace(requestId, json)` |
+| `MtopClient` | MTOP 签名（`md5(_m_h5_tk&t&appKey&data)`）、token 握手、cookie 持久化——浏览器读不到 `_m_h5_tk`，App 自己的 cookie jar 读得到 |
+| `PunishActivity` | 被风控拦下时打开阿里的滑块页，轮询到 `x5sec` 后把 cookie 交给原生请求重试 |
+
+网页端按 **原生桥 → `127.0.0.1:8787` → Worker** 的顺序尝试（见 `src/lib/local-lookup.ts`），
+所以同一个构建在桌面浏览器、APK、手机浏览器里都能用，走不通就退回原来的 `/api/trace/lookup`。
+
+- 站点必须重新部署/本地 dev 跑起来，APK 才拿得到调用桥的那段 JS。
+- 需要 **Chrome 90+ 的系统 WebView**。旧设备（比如 Android 9 自带的 Chrome 69）解析不了站点的 JS，
+  App 会先弹一句说明，并给一个「用浏览器打开」的出口，不会只剩白屏。
+- 调试连本机开发服务器：改 `android/app/src/main/res/values/strings.xml` 的 `start_url` 为
+  `http://10.0.2.2:5173`（模拟器）或你电脑的局域网地址，并把主机名加进 `allowed_hosts`；
+  debug 包已经允许明文 HTTP，release 包不允许。
+- `npm run apk:release` 出的是**未签名**的 release 包，要自己配签名才能装。
+- 首次构建如果没有设 `GRADLE_HOME`，会走 `android/gradlew`，需要联网下载一次 Gradle（约 130 MB）。
+
+已经在 API 28 模拟器上验证过的部分：安装启动、WebView 加载站点、`MedCollectNative.lookup()` 被页面调用、
+原生 MTOP 签名与 `_m_h5_tk` 握手、被风控拦下时自动打开阿里滑块页。**还差真人拖一次滑块**——
+拖完 `x5sec` 才会写进 cookie jar，那一步没法自动化，需要你在真机上跑一遍。
 
 ## 数据迁移、备份和测试
 

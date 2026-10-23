@@ -23,8 +23,21 @@ npm run dev
 `x5sec` 写进 `cookies.json`；再扫一次就通了。不想让服务弹窗就加 `--no-auto-verify`，
 或者手动跑一次 `npm run trace:solve`。
 
-`.dev.vars` 里已有 `TRACE_API_URL=http://127.0.0.1:8787/api/trace/medcollect`，直接生效。
-想关掉查询、回到手工补全：把该行留空并重启 App。
+### 浏览器直连（默认路径）
+
+扫码页会把查询请求**直接从浏览器**发给 `http://127.0.0.1:8787/api/trace/medcollect`：
+
+- 请求从你自己的电脑发出，不经过 Cloudflare Worker，所以云端部署的站点也能用；
+- 不需要任何密钥；
+- 服务返回 `Access-Control-Allow-Origin`（默认 `*`）和 `Access-Control-Allow-Private-Network: true`，
+  Chrome 的 Private Network Access 预检也能过；
+- 默认放行所有来源。想收紧就设 `MSFX_ALLOWED_ORIGINS=https://med.miolab.ink,http://localhost:5173`，
+  此时只有列出的站点能拿到 CORS 头（逗号分隔，按需自行调整）；
+- 本机这条路走不通（服务没开、浏览器不允许访问回环地址）时，App 自动回退到 Worker 的
+  `/api/trace/lookup`，行为与以前一致。
+
+服务端那条路仍然保留：`.dev.vars` 里已有 `TRACE_API_URL=http://127.0.0.1:8787/api/trace/medcollect`，
+本机开发时两条路等价；想彻底关掉查询、回到手工补全，把该行留空并重启 App。
 
 不接真上游也能验证接线（用合成样本，不访问阿里）：
 
@@ -139,9 +152,11 @@ MedCollect 侧对 `401/403 → 无权限`、`404 → 未找到`、`428 → 需�
 
 ## 四、参数与鉴权
 
+**默认不需要任何 API Key**：服务只监听 `127.0.0.1`，本机 App 直接调用，请求里不带任何鉴权头。
+
 | 参数 | 默认 | 说明 |
 |---|---|---|
-| `--host` | `127.0.0.1` | 监听地址（对外提供服务必须加 `MSFX_API_KEY`） |
+| `--host` | `127.0.0.1` | 监听地址；只给本机用时保持默认，别改成 `0.0.0.0` |
 | `--port` | `8787` | 端口 |
 | `--backend` | `auto` | `http` 纯 HTTP / `browser` 走浏览器 / `auto` 先 HTTP 再降级 |
 | `--headed` | 关 | 浏览器后端显示窗口 |
@@ -151,19 +166,25 @@ MedCollect 侧对 `401/403 → 无权限`、`404 → 未找到`、`428 → 需�
 | `--verify-wait` | `4` | 弹窗后本次请求最多等多久（秒）；0=立刻返回 428（MedCollect 客户端 10 秒超时，别设太大） |
 | `--verify-timeout` | `180` | 验证窗口最长存在多久（秒） |
 | `--mock FILE` | — | 离线自测，把文件当 ④ 的 data，不访问上游 |
+| `--no-dict` | 关 | 关掉本机药品字典 |
+| `--dict-file FILE` | `drug_dict.json` | 字典文件位置（环境变量 `MSFX_DICT_FILE`） |
+| `--dict-prefix N` | `7` | 药品标识码取前几位（环境变量 `MSFX_DICT_PREFIX`） |
 
-`GET /health` 里的 `verify` 字段会给出窗口状态：`active` / `ok` / `message` / `attempts`。
+`GET /health` 里的 `verify` 字段会给出窗口状态：`active` / `ok` / `message` / `attempts`；
+`dict` 字段给出字典状态：`entries` / `ambiguous` / `hits` / `learned` / `conflicts`。
 
-设置环境变量 `MSFX_API_KEY` 后，请求要带 `X-API-Key: <key>`、`?key=<key>` 或 `Authorization: Bearer <key>`。
+环境变量 `MSFX_ALLOWED_ORIGINS` 可以限制浏览器直连的来源（默认 `*`，见上文）。
 
-**部署到公网时**：服务必须 HTTPS、加 `MSFX_API_KEY`，然后 MedCollect 侧配
+密钥是可选的加固，不是必需配置：只有在把服务暴露到本机之外（局域网、公网反代、Cloudflare Tunnel）时才建议设置环境变量 `MSFX_API_KEY`，此时请求要带 `X-API-Key: <key>`、`?key=<key>` 或 `Authorization: Bearer <key>`。不设就完全不校验。
+
+**如果以后要部署到公网**：服务放到 HTTPS 后面即可，MedCollect 侧只改一行 `TRACE_API_URL`；
 
 ```dotenv
 TRACE_API_URL=https://your-host/api/trace/medcollect
-TRACE_API_TOKEN=<MSFX_API_KEY>
+TRACE_API_TOKEN=            # 本机/内网使用留空；公网暴露时再填 MSFX_API_KEY
 ```
 
-`TRACE_API_TOKEN` 会变成 `Authorization: Bearer`，服务端认这个头。注意 Workers 生产环境不允许 http 回环地址。
+注意 Workers 生产环境不允许 http 回环地址，公网服务必须 HTTPS。
 
 ## 五、文件
 
@@ -173,14 +194,36 @@ browser.py        Edge + CDP（纯标准库 WebSocket），真实渲染页面并
 verify.py         自动弹窗验证：开可见窗口 → 人拖滑块 → 写 cookies.json（带冷却与状态）
 solve.py          手动版一次性验证（不想让服务自动弹窗时用）
 server.py         HTTP API（含 medcollect 形状与 mock 模式）
+drug_dict.py      本机药品字典：按标识码前缀记产品级信息，同款药只查一次
+dict_cli.py       字典命令行（查看 / 导入种子 / 删除 / 清理）
 cli.py            命令行
 launch.mjs        用本机 Python 跑上面的脚本（npm run trace:*）
 test_shape.py     离线自测：上游 data -> 对外 JSON 的形状
+test_dict.py      离线自测：字典学习、前缀冲突、命中链路
 test_verify.py    离线自测：弹窗调度、冷却、失败兜底
 mock-sample.json  合成样本（不是真实药品数据）
 cookies.json      verify.py / solve.py 写出（已忽略）
+drug_dict.json    药品字典（已忽略，从你自己的查询里长出来）
 .browser-profile/ 浏览器 profile（已忽略）
 ```
+
+## 五之二、本机药品字典
+
+20 位追溯码 = **药品标识码（产品）+ 序列号（这一盒）**。同款药的每一盒只有序列号不同，
+所以第一次查到某款药以后，同款药的其他盒可以离线回答。
+
+- 学：每次上游查询成功，把 `summary` 里的**产品级**字段按 `code[:7]` 记一条。
+- 不学：`batch_no` / `production_date` / `expiry_date` / `scan_count` / `code_status`——
+  这些每盒都不一样，按产品缓存会张冠李戴。命中字典时 `batch_fields_known: false`，
+  MedCollect 侧会提示用户按药盒补全批号和有效期。
+- 命中时返回 `source: "drug_dict"`，不发任何网络请求，也不计入风控间隔。
+- `fresh=1` 会绕过字典重新问上游（结果再写回字典）。
+- **前缀冲突保护**：同一前缀出现不同药名/规格/企业时，这条立刻标 `ambiguous` 并停止命中。
+  平台没有公开说明标识码的确切位数，这个保护让「前缀猜短了」的代价只是少缓存，而不是给错药名。
+- 种子导入：`npm run trace:dict -- --import boxes.json`，支持 `wrangler d1 execute --json` 的
+  原始输出、普通 JSON 数组、CSV/TSV；字段名认 `traceCode/code`、`genericName/drugName/通用名`、
+  `specification/spec/规格`、`manufacturer/生产企业` 等常见写法。
+
 
 ## 六、已知限制
 

@@ -24,7 +24,10 @@
     "trace:api": "node services/trace-api/launch.mjs server.py",
     "trace:api:mock": "node services/trace-api/launch.mjs server.py --mock services/trace-api/mock-sample.json",
     "trace:solve": "node services/trace-api/launch.mjs solve.py",
-    "trace:test": "node services/trace-api/launch.mjs test_shape.py && node services/trace-api/launch.mjs test_verify.py",
+    "trace:dict": "node services/trace-api/launch.mjs dict_cli.py",
+    "trace:test": "node services/trace-api/launch.mjs test_shape.py && node services/trace-api/launch.mjs test_dict.py && node services/trace-api/launch.mjs test_verify.py",
+    "apk": "node scripts/build-apk.mjs",
+    "apk:release": "node scripts/build-apk.mjs --release",
     "setup:local": "node scripts/setup-local.mjs",
     "db:export-legacy": "node scripts/export-legacy.mjs"
   },
@@ -63,7 +66,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^8.3.5",
-    "wrangler": "^4.151.3"
+    "wrangler": "^4.152.0"
   },
   "engines": {
     "node": ">=22.13.0"

@@ -83,7 +83,7 @@ class Recorder:
 class ClientGlueTest(unittest.TestCase):
     def test_被滑块拦住时自动弹窗(self):
         recorder = Recorder()
-        client = TraceCodeClient(auto_verify=True, verify_wait=0, verifier=recorder)
+        client = TraceCodeClient(auto_verify=True, verify_wait=0, verifier=recorder, use_dict=False)
         blocked = FloodControl("被拦", punish_url="https://punish.test/x")
         self.assertFalse(client._auto_verify_for(blocked))        # 不等 = 本次请求立刻返回
         self.assertEqual(recorder.urls, ["https://punish.test/x"])
@@ -91,20 +91,20 @@ class ClientGlueTest(unittest.TestCase):
 
     def test_登录墙不弹滑块窗口(self):
         recorder = Recorder()
-        client = TraceCodeClient(auto_verify=True, verify_wait=0, verifier=recorder)
+        client = TraceCodeClient(auto_verify=True, verify_wait=0, verifier=recorder, use_dict=False)
         wall = FloodControl("登录墙", punish_url="https://login.taobao.com/x", login_required=True)
         self.assertFalse(client._auto_verify_for(wall))
         self.assertEqual(recorder.urls, [])
 
     def test_等人拖完就在本次请求里继续(self):
         recorder = Recorder(succeed_after_wait=True)
-        client = TraceCodeClient(auto_verify=True, verify_wait=5, verifier=recorder)
+        client = TraceCodeClient(auto_verify=True, verify_wait=5, verifier=recorder, use_dict=False)
         blocked = FloodControl("被拦", punish_url="https://punish.test/x")
         self.assertTrue(client._auto_verify_for(blocked))
 
     def test_关掉自动验证就完全不弹窗(self):
         recorder = Recorder()
-        client = TraceCodeClient(auto_verify=False, verify_wait=5, verifier=recorder)
+        client = TraceCodeClient(auto_verify=False, verify_wait=5, verifier=recorder, use_dict=False)
         blocked = FloodControl("被拦", punish_url="https://punish.test/x")
         self.assertFalse(client._auto_verify_for(blocked))
         self.assertEqual(recorder.urls, [])
