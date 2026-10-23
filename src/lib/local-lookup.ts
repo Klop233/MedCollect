@@ -46,7 +46,7 @@ export function mapLocalPayload(payload: unknown, code: string): Lookup | null {
   const message = payload.source === 'drug_dict'
     ? '本机药品字典命中：这款药以前查过，药名、规格和生产企业直接填好了。批号和有效期每一盒都不同，请照药盒补全。'
     : '找到候选药品，请按药盒确认药名、规格和有效成分质量。';
-  return { status: 'found', message, candidate };
+  return { status: 'found', message, candidate, source: payload.source === 'drug_dict' ? 'drug_dict' : 'upstream' };
 }
 
 // --------------------------------------------------------------------------- APK 原生桥

@@ -42,3 +42,21 @@ export const requestLimits = sqliteTable("request_limits", {
   count: integer("count").notNull(),
   windowStart: integer("window_start").notNull(),
 });
+
+/**
+ * 共享药品字典：按药品标识码前缀只存「产品级」信息。
+ *
+ * 20 位追溯码 = 药品标识码 + 序列号，同款药的每一盒只有序列号不同，所以查到一次就能回答
+ * 同款药的其他盒。批号、生产日期、有效期属于每一盒，永远不进这张表。
+ * 同一前缀后来出现不同药品时置 ambiguous=1 并停止命中：宁可少缓存，也不给错药名。
+ */
+export const drugDictionary = sqliteTable("drug_dictionary", {
+  prefix: text("prefix").primaryKey(),
+  productJson: text("product_json").notNull(),
+  // 药名|规格|企业 的归一化指纹，用来判断两次上报是不是同一款药
+  fingerprint: text("fingerprint").notNull(),
+  samples: integer("samples").notNull().default(1),
+  ambiguous: integer("ambiguous").notNull().default(0),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

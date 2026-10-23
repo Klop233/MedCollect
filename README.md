@@ -210,6 +210,24 @@ npm run trace:dict -- --import boxes.json   # 从导出文件灌种子（JSON / 
 - 关掉它：`npm run trace:api -- --no-dict`（每个码都老老实实问上游）。
 - 运行状态在 `GET /health` 的 `dict` 字段里。
 
+### 共享药品字典：查一次，所有设备都省一次
+
+本机字典只帮得了一台设备。**查到一次就上报给服务器**，别的手机、别的电脑、没装本机服务的时候都能直接用：
+
+```
+扫码 → 本机（APK 原生桥 / 127.0.0.1）→ 共享字典（服务器）→ 上游
+                ↑ 查到就 POST 上去         ↓ 命中就不用再问阿里
+```
+
+- 表 `drug_dictionary`：`prefix`（标识码前 7 位）+ `product_json` + `fingerprint` + `samples` + `ambiguous`。
+  存的东西和本机字典一模一样：**只有产品级字段，没有批号和有效期**。
+- `GET /api/dictionary?code=<追溯码>` 按前缀查，`POST /api/dictionary` 上报（都要登录，写入还要求同源）。
+- 冲突规则也一样：同一前缀出现不同药名，立刻 `ambiguous=1` 停止命中，宁可少缓存也不给错药名。
+- 第一次回报只拿到药名也没关系：后面更完整的一次会补全字段，不算冲突。
+- 上报是「发完不管」的，失败不影响收藏；查询也只在本地没结果时才多问一次，正常最多 4 秒超时。
+
+服务器上需要先跑一次迁移：`npm run db:remote`（部署时 `deploy:worker` 会自动执行）。
+
 ### 最简接入：GET + Bearer Token
 
 ```dotenv
