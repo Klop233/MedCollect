@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { createAuthMailContent } from "./auth-mail-template";
 
 export type MailEnvironment = Record<string, string | undefined>;
 export type AuthMail = { to: string; url: string; kind: "verify" | "reset" };
@@ -50,10 +51,7 @@ export function createMailer(env: MailEnvironment = process.env): AuthMailer {
     if (action.origin !== base.origin) {
       throw new MailConfigurationError("邮件链接来源与应用地址不一致。");
     }
-    const title = kind === "verify" ? "验证你的邮箱" : "重置你的密码";
-    const description = kind === "verify"
-      ? "欢迎加入 MedCollect。打开以下链接验证邮箱，然后登录你的药品图鉴。"
-      : "我们收到了你的密码重置请求。打开以下链接设置新密码；成功后，其他设备将退出登录。";
+    const content = createAuthMailContent(action.toString(), kind);
     const transport = nodemailer.createTransport({
       host: config.host,
       port: config.port,
@@ -69,8 +67,9 @@ export function createMailer(env: MailEnvironment = process.env): AuthMailer {
     const result = await transport.sendMail({
       from: config.from,
       to,
-      subject: `MedCollect · ${title}`,
-      text: `${description}\n\n${action.toString()}\n\n链接将在 1 小时后过期。如果不是你本人操作，请忽略此邮件。\n此链接仅用于账号验证，不涉及药品认证或用药建议。`,
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
     });
     if (!result.accepted.length || result.rejected.length) {
       throw new Error("邮件服务器未接受投递，请稍后重试。");
