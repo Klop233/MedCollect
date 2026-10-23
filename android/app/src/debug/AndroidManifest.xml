@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 只有 debug 包允许明文 HTTP，方便在模拟器（10.0.2.2:5173）上连本机开发服务器。
+     release 包保持 AndroidManifest.xml 里的 usesCleartextTraffic="false"。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic" />
+</manifest>

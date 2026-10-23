@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MedCollect</string>
+    <string name="start_url">https://med.miolab.ink</string>
+    <!-- 只有这些站点可以调用原生查询桥；调试时把电脑的局域网地址加进来即可 -->
+    <string name="allowed_hosts" translatable="false">med.miolab.ink,localhost,127.0.0.1,10.0.2.2</string>
+</resources>
